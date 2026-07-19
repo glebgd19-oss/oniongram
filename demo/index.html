@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Oniongram</title>
+<meta name="description" content="Oniongram — анонимный мессенджер: личные чаты, каналы, сервера и звонки без телефона и email." />
+<meta name="theme-color" content="#07070f" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%85%3C/text%3E%3C/svg%3E" />
+<!--
+  Автономное демо Oniongram: без сборки и зависимостей, открывается двойным кликом.
+  Полный React-проект — в корне репозитория (npm install && npm run dev).
+  Состояния для быстрого перехода: #auth #app #channel #server #settings #search #call #profile
+-->
+<style>
+:root{ --spec-x:50%; --spec-y:30%; --a1:139 92 246; --a2:34 211 238; }
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; }
+body{
+  font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:#07070f; color:#e2e8f0; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{ font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+input{ font:inherit; color:inherit; }
+
+/* Анимированный фон: градиент + дрейфующие неоновые пятна (только transform → 60 FPS) */
+.scene{ position:fixed; inset:0; z-index:0;
+  background:
+    radial-gradient(1200px 800px at 85% -10%, rgba(var(--a1)/.16), transparent 60%),
+    radial-gradient(1000px 700px at -10% 110%, rgba(var(--a2)/.12), transparent 60%),
+    linear-gradient(160deg,#0b0b16 0%,#07070f 55%,#0a0716 100%); }
+.blob{ position:absolute; border-radius:50%; filter:blur(90px); opacity:.55; will-change:transform; }
+.blob.v{ width:44vw; height:44vw; left:-8vw; top:-12vw; background:rgba(var(--a1)/.28); animation:drA 26s ease-in-out infinite alternate; }
+.blob.c{ width:36vw; height:36vw; right:-6vw; bottom:-10vw; background:rgba(var(--a2)/.22); animation:drB 32s ease-in-out infinite alternate; }
+.blob.m{ width:26vw; height:26vw; right:22vw; top:-8vw; background:rgba(217 70 239/.16); animation:drC 38s ease-in-out infinite alternate; }
+@keyframes drA{ from{ transform:translate(0,0) scale(1);} to{ transform:translate(9vw,7vh) scale(1.15);} }
+@keyframes drB{ from{ transform:translate(0,0) scale(1);} to{ transform:translate(-8vw,-6vh) scale(1.12);} }
+@keyframes drC{ from{ transform:translate(0,0);} to{ transform:translate(6vw,9vh);} }
+
+/* Liquid Glass */
+.glass{ background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14);
+  -webkit-backdrop-filter:blur(20px) saturate(180%); backdrop-filter:blur(20px) saturate(180%);
+  box-shadow:0 18px 40px -18px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08); }
+.glass-strong{ background:rgba(22,22,40,.62); border:1px solid rgba(255,255,255,.15);
+  -webkit-backdrop-filter:blur(24px) saturate(180%); backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:0 30px 70px -25px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.09); }
+/* Цветное преломление по краям */
+.refract{ position:relative; }
+.refract::before{ content:""; position:absolute; inset:0; border-radius:inherit; padding:1px; pointer-events:none;
+  background:linear-gradient(130deg, rgba(var(--a1)/.55), rgba(255,255,255,.10) 30%, rgba(255,255,255,.05) 55%, rgba(var(--a2)/.5));
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude; }
+/* Блик, следующий за курсором */
+.spec::after{ content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:radial-gradient(420px 300px at var(--spec-x) var(--spec-y), rgba(255,255,255,.09), transparent 62%);
+  transition:opacity .3s; }
+
+.scroll::-webkit-scrollbar{ width:6px; }
+.scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.14); border-radius:3px; }
+
+/* Анимации */
+@keyframes rise{ from{ opacity:0; transform:translateY(14px) scale(.98);} to{ opacity:1; transform:none;} }
+@keyframes pop{ from{ opacity:0; transform:translateY(26px) scale(.94);} to{ opacity:1; transform:none;} }
+@keyframes fade{ from{ opacity:0;} to{ opacity:1;} }
+@keyframes drop{ from{ opacity:0; transform:translateY(-22px) scale(.97);} to{ opacity:1; transform:none;} }
+.anim-rise{ animation:rise .38s cubic-bezier(.2,.9,.25,1.05) both; }
+.anim-pop{ animation:pop .4s cubic-bezier(.2,.9,.25,1.1) both; }
+.anim-fade{ animation:fade .25s ease both; }
+.anim-drop{ animation:drop .38s cubic-bezier(.2,.9,.25,1.05) both; }
+.msg{ animation:rise .38s cubic-bezier(.2,.9,.25,1.05) both; }
+
+/* Статусы */
+.dot{ position:absolute; right:-1px; bottom:-1px; width:11px; height:11px; border-radius:50%; border:2px solid #0b0b16; }
+.dot.online{ background:#34d399; animation:pulse 2s ease-out infinite; }
+.dot.idle{ background:#fbbf24; } .dot.dnd{ background:#f87171; }
+.dot.hidden_{ background:#64748b; } .dot.offline{ background:#475569; }
+@keyframes pulse{ 0%{ box-shadow:0 0 0 0 rgba(52,211,153,.5);} 70%{ box-shadow:0 0 0 7px rgba(52,211,153,0);} 100%{ box-shadow:0 0 0 0 rgba(52,211,153,0);} }
+.tdot{ display:inline-block; width:4px; height:4px; margin:0 1px; border-radius:50%; background:currentColor; animation:typing 1.2s infinite; }
+.tdot:nth-child(2){ animation-delay:.15s; } .tdot:nth-child(3){ animation-delay:.3s; }
+@keyframes typing{ 0%,60%,100%{ transform:translateY(0); opacity:.4;} 30%{ transform:translateY(-4px); opacity:1;} }
+.skeleton{ position:relative; overflow:hidden; background:rgba(255,255,255,.06); border-radius:12px; }
+.skeleton::after{ content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent); animation:shimmer 1.4s infinite; }
+@keyframes shimmer{ to{ transform:translateX(100%);} }
+.wave i{ display:inline-block; width:2.5px; margin-right:2px; border-radius:2px; background:rgba(255,255,255,.75); animation:wave 1.1s ease-in-out infinite; }
+@keyframes wave{ 0%,100%{ transform:scaleY(.45);} 50%{ transform:scaleY(1);} }
+
+/* Макет */
+#root{ position:relative; z-index:1; height:100%; }
+.app{ display:flex; gap:14px; height:100%; padding:14px; max-width:2560px; margin:0 auto; }
+.sidebar{ width:340px; flex-shrink:0; border-radius:18px; display:flex; flex-direction:column; overflow:hidden; }
+.main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:12px; }
+.panel-h{ border-radius:16px; padding:12px 16px; display:flex; align-items:center; gap:12px; position:relative; z-index:5; }
+.feed{ flex:1; overflow-y:auto; border-radius:16px; background:rgba(0,0,0,.28); padding:16px; }
+.composer{ border-radius:16px; padding:8px; display:flex; align-items:center; gap:8px; position:relative; z-index:5; }
+.row{ display:flex; align-items:center; gap:12px; width:100%; padding:10px 12px; border-radius:12px; text-align:left; transition:background .18s, transform .18s; }
+.row:hover{ background:rgba(255,255,255,.05); transform:translateX(3px); }
+.row.active{ background:rgba(255,255,255,.1); }
+.av{ position:relative; flex-shrink:0; border-radius:50%; display:grid; place-items:center; font-weight:600; color:#fff; }
+.bubble{ max-width:62%; padding:10px 14px; border-radius:16px; font-size:15px; line-height:1.5; }
+.bubble.me{ background:linear-gradient(135deg, rgba(124,58,237,.88), rgba(139,92,246,.72)); border-bottom-right-radius:6px; color:#fff; }
+.bubble.them{ background:rgba(26,26,43,.92); border-bottom-left-radius:6px; }
+.meta{ display:flex; justify-content:flex-end; gap:5px; margin-top:4px; font-size:11px; opacity:.6; }
+.chip{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:99px; background:rgba(255,255,255,.1); font-size:12px; cursor:pointer; transition:transform .18s, background .18s; }
+.chip:hover{ transform:scale(1.1); background:rgba(var(--a1)/.3); }
+.iconbtn{ display:grid; place-items:center; width:42px; height:42px; border-radius:12px; font-size:17px; transition:transform .2s, background .2s; }
+.iconbtn:hover{ transform:scale(1.08); background:rgba(255,255,255,.1); }
+.grad-btn{ border-radius:12px; background:linear-gradient(135deg,#8b5cf6,#22d3ee); color:#fff; font-weight:600;
+  box-shadow:0 0 24px rgba(139,92,246,.35); transition:transform .2s, filter .2s; }
+.grad-btn:hover{ transform:translateY(-1px) scale(1.02); filter:brightness(1.1); }
+.overlay{ position:fixed; inset:0; z-index:50; display:grid; place-items:center; background:rgba(0,0,0,.48); padding:20px; }
+.tab-active{ background:linear-gradient(90deg, rgba(var(--a1)/.35), rgba(var(--a2)/.25)); color:#fff !important; }
+.label{ font-size:11px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:#64748b; padding:8px 12px 4px; }
+.switch{ position:relative; width:44px; height:24px; border-radius:99px; background:rgba(255,255,255,.1); transition:background .25s; flex-shrink:0; }
+.switch.on{ background:rgba(var(--a1)/.7); }
+.switch::after{ content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:left .25s cubic-bezier(.2,.9,.3,1.2); }
+.switch.on::after{ left:22px; }
+.srow{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px; border-radius:12px; }
+.srow:hover{ background:rgba(255,255,255,.04); }
+.muted{ color:#94a3b8; } .dim{ color:#64748b; } .small{ font-size:12px; } .tiny{ font-size:11px; }
+.gradtext{ background:linear-gradient(90deg,#a78bfa,#67e8f9); -webkit-background-clip:text; background-clip:text; color:transparent; }
+input.field{ width:100%; padding:12px 14px; border-radius:12px; background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12); outline:none; transition:border-color .2s, box-shadow .2s; }
+input.field:focus{ border-color:rgba(var(--a1)/.7); box-shadow:0 0 0 3px rgba(var(--a1)/.18); }
+input.bare{ flex:1; min-width:0; background:none; border:0; outline:none; padding:10px 8px; font-size:15px; }
+input.bare::placeholder,input.field::placeholder{ color:#64748b; }
+
+@media (max-width:1100px){ .sidebar{ width:280px; } .members{ display:none !important; } }
+@media (max-width:760px){ .sidebar{ width:220px; } .rail-label{ display:none; } .bubble{ max-width:82%; } }
+@media (prefers-reduced-motion:reduce){ *{ animation-duration:.001s !important; transition-duration:.001s !important; } }
+</style>
+</head>
+<body>
+<div class="scene"><div class="blob v"></div><div class="blob c"></div><div class="blob m"></div></div>
+<div id="root"></div>
+<script>
+"use strict";
+/* ============ MOCK-ДАННЫЕ ============ */
+const USERS = {
+  me:{ id:"me", username:"nyx", displayName:"Nyx", status:"hidden", customStatus:"🧅 слои лука", hue:265, premium:true, hideLastSeen:true },
+  cipher:{ id:"cipher", username:"cipher", displayName:"Cipher", status:"online", customStatus:"шифрую всё подряд", hue:190, premium:true, hideLastSeen:false, lastSeen:"только что" },
+  ghostwire:{ id:"ghostwire", username:"ghostwire", displayName:"Ghostwire", status:"hidden", hue:320, premium:false, hideLastSeen:true },
+  lumen:{ id:"lumen", username:"lumen", displayName:"Lumen", status:"idle", customStatus:"afk ☕", hue:45, premium:true, hideLastSeen:false, lastSeen:"12 мин назад" },
+  vanta:{ id:"vanta", username:"vanta", displayName:"Vanta", status:"dnd", customStatus:"не беспокоить", hue:0, premium:false, hideLastSeen:false, lastSeen:"час назад" },
+  orbit:{ id:"orbit", username:"orbit", displayName:"Orbit", status:"offline", hue:150, premium:false, hideLastSeen:false, lastSeen:"вчера" },
+};
+const CHATS = [
+  { id:"c-cipher", userId:"cipher", unread:0, typing:true, messages:[
+    { id:"m1", a:"cipher", kind:"text", text:"Привет! Новый ключ сессии уже сгенерирован 🔐", time:"14:02", enc:true },
+    { id:"m2", a:"me", kind:"text", text:"Отлично. Проверим звонок сегодня?", time:"14:03", enc:true, mine:true },
+    { id:"m3", a:"cipher", kind:"photo", hue:210, time:"14:05", enc:true, reactions:{"🔥":3,"🧅":1} },
+    { id:"m4", a:"cipher", kind:"file", fileName:"onion-proto-v2.pdf", fileSize:"2,4 МБ", time:"14:06", enc:true },
+    { id:"m5", a:"me", kind:"voice", secs:14, time:"14:09", enc:true, mine:true },
+    { id:"m6", a:"cipher", kind:"text", text:"Звучит отлично. Никаких метаданных — только шифр 🧅", time:"14:11", enc:true, reactions:{"⚡":2} },
+  ]},
+  { id:"c-ghostwire", userId:"ghostwire", unread:0, messages:[
+    { id:"g1", a:"ghostwire", kind:"text", text:"Я невидимка, но тебе отвечу 🕶️", time:"12:40", enc:true },
+    { id:"g2", a:"me", kind:"text", text:"Статус скрыт — как и задумано", time:"12:41", enc:true, mine:true },
+  ]},
+  { id:"c-lumen", userId:"lumen", unread:5, messages:[
+    { id:"l1", a:"lumen", kind:"text", text:"Зацени новые анимированные стикеры! ✨ Они бесплатные, хоть и «premium»", time:"11:20", enc:true },
+    { id:"l2", a:"lumen", kind:"voice", secs:27, time:"11:21", enc:true },
+  ]},
+  { id:"c-vanta", userId:"vanta", unread:0, messages:[
+    { id:"v1", a:"vanta", kind:"text", text:"Не звони до вечера — дедлайн 🔴", time:"09:15", enc:true },
+  ]},
+];
+const CHANNELS = [
+  { id:"ch-onion", handle:"onion_daily", name:"Onion Daily", verified:true, subs:48213, subscribed:true, posts:[
+    { id:"p1", text:"🧅 Обновление Oniongram: теперь блик стекла следует за курсором, а панели «парят» над контентом. Liquid Glass 2.0 в каждой модалке.", views:12873, time:"18:00", reactions:{"🔥":214,"🧅":98,"👍":61} },
+    { id:"p2", text:"Напоминаем: регистрация — только логин и пароль. Никаких телефонов, email и прочих следов. Ваша личность — это @username.", views:15402, time:"вчера", reactions:{"🔐":183,"⚡":44} },
+  ]},
+  { id:"ch-digest", handle:"darknet_digest", name:"Darknet Digest", verified:false, subs:9307, subscribed:true, posts:[
+    { id:"p3", text:"Дайджест недели: лучшие практики цифровой гигиены — от менеджеров паролей до аппаратных ключей.", views:4210, time:"15:30", reactions:{"👀":37,"📚":21} },
+  ]},
+  { id:"ch-glass", handle:"glass_design", name:"Glass Design", verified:false, subs:21540, subscribed:false, posts:[
+    { id:"p4", text:"Разбор: почему backdrop-filter: blur(20px) saturate(180%) + тонкая белая обводка дают эффект настоящего стекла. С примерами кода.", views:8932, time:"10:12", reactions:{"💎":76,"🔥":40} },
+  ]},
+];
+const SERVERS = [
+  { id:"s-tor", handle:"tor_lounge", name:"Tor Lounge", icon:"🧅", members:1284,
+    roles:[
+      { id:"r-admin", name:"Admin", color:"#a78bfa", perms:["управление каналами","бан","приглашения"] },
+      { id:"r-mod", name:"Moderator", color:"#22d3ee", perms:["удаление сообщений","мут"] },
+      { id:"r-member", name:"Member", color:"#94a3b8", perms:["писать","войс"] },
+    ],
+    memberRoles:{ me:"r-admin", cipher:"r-mod", lumen:"r-member", ghostwire:"r-member", vanta:"r-member" },
+    channels:[
+      { id:"t-general", type:"text", name:"general" },
+      { id:"t-privacy", type:"text", name:"privacy-talk" },
+      { id:"t-memes", type:"text", name:"memes" },
+      { id:"v-lounge", type:"voice", name:"Lounge", voices:["cipher","lumen"] },
+      { id:"v-focus", type:"voice", name:"Focus room", voices:[] },
+    ],
+    messages:{
+      "t-general":[
+        { id:"s1", a:"cipher", kind:"text", text:"Кто тестировал новый скрытый режим? Ста��ус «невидимка» работает идеально", time:"13:20", reactions:{"🕶️":5} },
+        { id:"s2", a:"lumen", kind:"text", text:"Я! Даже админ не видит, когда я онлайн 😄", time:"13:22" },
+        { id:"s3", a:"me", kind:"text", text:"Так и задумано. Приватность по умолчанию — наше всё 🧅", time:"13:25", reactions:{"👍":8,"🧅":3} },
+        { id:"s4", a:"vanta", kind:"photo", hue:280, time:"13:30" },
+      ],
+      "t-privacy":[
+        { id:"s5", a:"ghostwire", kind:"text", text:"Гайд по 2FA обновил — теперь с TOTP-приложениями", time:"12:02", reactions:{"🔐":6} },
+      ],
+      "t-memes":[
+        { id:"s6", a:"lumen", kind:"photo", hue:120, time:"11:11", reactions:{"😂":14} },
+      ],
+    },
+  },
+  { id:"s-night", handle:"night_owls", name:"Night Owls", icon:"🦉", members:342,
+    roles:[
+      { id:"r-owl", name:"Owl", color:"#fbbf24", perms:["писать","войс","приглашения"] },
+      { id:"r-guest", name:"Guest", color:"#94a3b8", perms:["читать"] },
+    ],
+    memberRoles:{ me:"r-owl", orbit:"r-guest", vanta:"r-owl" },
+    channels:[
+      { id:"n-general", type:"text", name:"после-полуночи" },
+      { id:"n-voice", type:"voice", name:"Night voice", voices:[] },
+    ],
+    messages:{ "n-general":[
+      { id:"n1", a:"vanta", kind:"text", text:"Кто ещё не спит? 🌙", time:"02:14", reactions:{"🦉":4} },
+    ]},
+  },
+];
+const PERKS = [
+  { icon:"🎭", t:"Кастомные статусы", d:"Любой текст и эмодзи рядом с именем" },
+  { icon:"📦", t:"Файлы до 2 ГБ", d:"Увеличенный лимит загрузки" },
+  { icon:"✨", t:"Анимированные эмодзи", d:"Стикеры и эмодзи с анимацией" },
+  { icon:"🎨", t:"Кастомные темы", d:"Неоновые акценты на выбор" },
+];
+const DEVICES = [
+  { id:"d1", name:"Chrome · Linux", loc:"Это устройство", when:"сейчас", cur:true },
+  { id:"d2", name:"Firefox · Windows", loc:"Сессия #2", when:"3 дня назад", cur:false },
+  { id:"d3", name:"Safari · iPhone", loc:"Сессия #3", when:"неделю назад", cur:false },
+];
+
+/* ============ БЕЗОПАСНОСТЬ (демо) ============ */
+let sessionKey = null;
+function getKey(){ if(!sessionKey){ sessionKey = Math.random().toString(36).slice(2); } return sessionKey; }
+function demoEncrypt(t){ const k=getKey(); let o=""; for(let i=0;i<t.length;i++){ o+=String.fromCharCode(t.charCodeAt(i)^k.charCodeAt(i%k.length)); } return btoa(unescape(encodeURIComponent(o))); }
+function demoDecrypt(c){ try{ const k=getKey(); const t=decodeURIComponent(escape(atob(c))); let o=""; for(let i=0;i<t.length;i++){ o+=String.fromCharCode(t.charCodeAt(i)^k.charCodeAt(i%k.length)); } return o; }catch(e){ return c; } }
+const rl = { events:[], max:5, win:10000,
+  take(){ const now=Date.now(); this.events=this.events.filter(t=>now-t<this.win);
+    if(this.events.length>=this.max){ return { ok:false, wait:Math.ceil((this.win-(now-this.events[0]))/1000) }; }
+    this.events.push(now); return { ok:true }; } };
+function makeCaptcha(){ const a=2+Math.floor(Math.random()*8), b=2+Math.floor(Math.random()*8); return { q:a+" + "+b+" = ?", ans:a+b }; }
+
+/* ============ СОСТОЯНИЕ ============ */
+const S = {
+  authed:false, authTab:"login", captcha:makeCaptcha(), authError:"", twoFa:false,
+  section:"chats", loading:false,
+  chatId:"c-cipher", channelId:"ch-onion", serverId:"s-tor", serverChannelId:"t-general",
+  overlay:null, callUser:null, callVideo:false, callSecs:0, muted:false, camOff:false,
+  settingsTab:"privacy", searchQ:"", profileId:null,
+  prefs:{ hideLastSeen:true, hideOnline:true, twoFa:false, nChats:true, nChannels:false, nSound:true, accent:"violet" },
+  blocked:[], exported:false,
+  extraMsgs:{}, limitNote:"",
+};
+let callTimer=null;
+
+/* Состояния из хэша — для быстрого просмотра/тестов */
+(function(){
+  const h=(location.hash||"").slice(1);
+  if(!h||h==="auth") return;
+  S.authed=true;
+  if(h==="channel"){ S.section="channels"; }
+  else if(h==="server"){ S.section="servers"; }
+  else if(h==="settings"){ S.overlay="settings"; }
+  else if(h==="search"){ S.overlay="search"; S.searchQ="ci"; }
+  else if(h==="call"){ S.overlay="call"; S.callUser="cipher"; S.callVideo=true; }
+  else if(h==="profile"){ S.overlay="profile"; S.profileId="cipher"; }
+})();
+
+/* ============ ХЕЛПЕРЫ ============ */
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fmt(n){ return n.toLocaleString("ru-RU"); }
+function avatar(u,size,showStatus){
+  size=size||40;
+  const st=showStatus===false?"":('<span class="dot '+(u.status==="hidden"?"hidden_":u.status)+'"></span>');
+  return '<span class="av" style="width:'+size+'px;height:'+size+'px;font-size:'+Math.round(size*0.4)+'px;background:linear-gradient(135deg,hsl('+u.hue+' 65% 52%),hsl('+(u.hue+70)+' 65% 38%))">'+esc(u.displayName[0])+st+'</span>';
+}
+function typing(){ return '<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>'; }
+
+/* ============ РЕНДЕР ============ */
+function render(){
+  const root=document.getElementById("root");
+  root.innerHTML = S.authed ? viewApp() : viewAuth();
+  const inp=document.getElementById("draft"); if(inp && !S.overlay){ /* не воруем фокус из оверлеев */ }
+  const sq=document.getElementById("searchbox"); if(sq){ sq.focus(); sq.setSelectionRange(sq.value.length,sq.value.length); }
+  const feed=document.getElementById("feed"); if(feed){ feed.scrollTop=feed.scrollHeight; }
+}
+
+/* ---------- AUTH ---------- */
+function viewAuth(){
+  const reg=S.authTab==="register";
+  return '<div style="height:100%;display:grid;place-items:center;padding:20px">'+
+  '<div class="glass-strong refract spec anim-pop" style="width:100%;max-width:440px;border-radius:24px;padding:36px">'+
+    '<div style="text-align:center;margin-bottom:26px">'+
+      '<div style="font-size:44px;margin-bottom:8px">🧅</div>'+
+      '<div class="gradtext" style="font-size:26px;font-weight:800">Oniongram</div>'+
+      '<div class="muted small" style="margin-top:6px">Анонимный мессенджер · без телефона и email</div>'+
+    '</div>'+
+    '<div class="glass" style="display:flex;border-radius:12px;padding:4px;margin-bottom:22px">'+
+      '<button onclick="setAuthTab(\'login\')" style="flex:1;padding:9px;border-radius:9px" class="'+(reg?"muted":"tab-active")+'">Вход</button>'+
+      '<button onclick="setAuthTab(\'register\')" style="flex:1;padding:9px;border-radius:9px" class="'+(reg?"tab-active":"muted")+'">Регистрация</button>'+
+    '</div>'+
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+      '<input id="a-user" class="field" placeholder="@username (a-z, 0-9, _)" autocomplete="off" />'+
+      '<input id="a-pass" class="field" type="password" placeholder="Пароль" oninput="drawStrength(this.value)" />'+
+      (reg?'<div id="strength" style="display:flex;gap:5px;height:4px">'+strengthBars(0)+'</div>'+
+      '<div class="glass" style="border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">'+
+        '<span class="small muted">🤖 Капча: <b style="color:#e2e8f0">'+S.captcha.q+'</b></span>'+
+        '<input id="a-captcha" class="field" style="width:90px;padding:8px 10px;margin-left:auto" placeholder="Ответ" />'+
+      '</div>'+
+      '<label class="srow" style="cursor:pointer"><span class="small">Двухфакторная защита (опционально)<br><span class="tiny dim">TOTP-код при каждом входе</span></span>'+
+        '<span class="switch'+(S.twoFa?" on":"")+'" onclick="S.twoFa=!S.twoFa;render()"></span></label>':'')+
+      (S.authError?'<div class="small anim-fade" style="color:#fca5a5">⚠️ '+esc(S.authError)+'</div>':'')+
+      '<button class="grad-btn" style="padding:13px;font-size:15px" onclick="submitAuth()">'+(reg?"Создать аккаунт 🧅":"Войти")+'</button>'+
+      '<div class="tiny dim" style="text-align:center;line-height:1.6">🔐 Только логин и пароль. Никаких персональных данных,<br>переписка шифруется локально (E2E).</div>'+
+      '<div class="tiny dim" style="text-align:center;margin-top:10px;opacity:.65">Oniongram v1.0.0 · Release</div>'+
+    '</div>'+
+  '</div></div>';
+}
+function strengthBars(lvl){
+  const colors=["#f87171","#fbbf24","#22d3ee","#34d399"]; let s="";
+  for(let i=0;i<4;i++){ s+='<span style="flex:1;border-radius:4px;background:'+(i<lvl?colors[lvl-1]:"rgba(255,255,255,.08)")+';transition:background .3s"></span>'; }
+  return s;
+}
+window.drawStrength=function(v){
+  let lvl=0; if(v.length>=8)lvl++; if(/[A-ZА-Я]/.test(v)&&/[a-zа-я]/.test(v))lvl++; if(/\d/.test(v))lvl++; if(/[^\wа-яА-Я]/.test(v))lvl++;
+  const el=document.getElementById("strength"); if(el){ el.innerHTML=strengthBars(lvl); }
+};
+window.setAuthTab=function(t){ S.authTab=t; S.authError=""; S.captcha=makeCaptcha(); render(); };
+window.submitAuth=function(){
+  const u=(document.getElementById("a-user").value||"").replace(/^@/,"").toLowerCase();
+  const p=document.getElementById("a-pass").value||"";
+  if(!/^[a-z0-9_]{3,20}$/.test(u)){ S.authError="Юзернейм: 3–20 символов, только a-z, 0-9 и _"; return render(); }
+  if(p.length<6){ S.authError="Пароль — минимум 6 символов"; return render(); }
+  if(S.authTab==="register"){
+    const c=document.getElementById("a-captcha").value;
+    if(parseInt(c,10)!==S.captcha.ans){ S.authError="Капча не пройдена — попробуйте ещё раз"; S.captcha=makeCaptcha(); return render(); }
+  }
+  S.authed=true; S.authError=""; render();
+};
+
+/* ---------- APP ---------- */
+function viewApp(){
+  return '<div class="app">'+viewSidebar()+'<main class="main anim-rise" style="position:relative">'+viewMain()+'</main></div>'+viewOverlay();
+}
+function viewSidebar(){
+  const me=USERS.me;
+  const rail=[["chats","💬","Чаты"],["channels","📡","Каналы"],["servers","🏠","Сервера"]];
+  let list="";
+  if(S.loading){ for(let i=0;i<6;i++){ list+='<div style="display:flex;gap:12px;padding:10px 12px;align-items:center"><span class="skeleton" style="width:40px;height:40px;border-radius:50%"></span><span style="flex:1"><span class="skeleton" style="display:block;height:12px;width:70%;margin-bottom:7px"></span><span class="skeleton" style="display:block;height:10px;width:45%"></span></span></div>'; } }
+  else if(S.section==="chats"){
+    list=CHATS.map(function(c,i){
+      const u=USERS[c.userId]; const all=c.messages.concat(S.extraMsgs[c.id]||[]); const last=all[all.length-1];
+      const preview=c.typing?('<span style="color:#67e8f9">печатает '+typing()+'</span>')
+        : last.kind==="voice"?"🎙️ Голосовое" : last.kind==="photo"?"🖼️ Фото" : last.kind==="file"?("📎 "+esc(last.fileName)) : esc(last.mine&&last.id.startsWith("x")?demoDecrypt(last.text):last.text);
+      return '<button class="row anim-rise'+(S.chatId===c.id&&" active"||"")+'" style="animation-delay:'+(i*40)+'ms" onclick="openChat(\''+c.id+'\')">'+avatar(u)+
+        '<span style="flex:1;min-width:0"><span style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.displayName)+(u.premium?" ✨":"")+'</span><span class="tiny dim">'+last.time+'</span></span>'+
+        '<span style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+preview+'</span>'+
+        (c.unread?'<span style="background:linear-gradient(90deg,#8b5cf6,#22d3ee);color:#fff;border-radius:99px;font-size:11px;font-weight:600;padding:1px 7px">'+c.unread+'</span>':"")+'</span></span></button>';
+    }).join("");
+  } else if(S.section==="channels"){
+    list=CHANNELS.map(function(ch,i){
+      return '<button class="row anim-rise'+(S.channelId===ch.id&&" active"||"")+'" style="animation-delay:'+(i*40)+'ms" onclick="openChannel(\''+ch.id+'\')">'+
+        '<span class="av" style="width:40px;height:40px;font-size:16px;background:linear-gradient(135deg,rgba(139,92,246,.5),rgba(34,211,238,.4))">📡</span>'+
+        '<span style="flex:1;min-width:0"><span style="font-size:14px;font-weight:500">'+esc(ch.name)+(ch.verified?' <span style="color:#67e8f9">✓</span>':"")+'</span>'+
+        '<span class="small muted" style="display:block">@'+ch.handle+' · '+fmt(ch.subs)+' подписчиков</span></span>'+
+        (!ch.subscribed?'<span class="tiny" style="background:rgba(139,92,246,.25);color:#c4b5fd;border-radius:99px;padding:2px 8px">новое</span>':"")+'</button>';
+    }).join("");
+  } else {
+    list=SERVERS.map(function(s,i){
+      return '<button class="row anim-rise'+(S.serverId===s.id&&" active"||"")+'" style="animation-delay:'+(i*40)+'ms" onclick="openServer(\''+s.id+'\')">'+
+        '<span class="av" style="width:40px;height:40px;border-radius:14px;font-size:18px;background:linear-gradient(135deg,rgba(139,92,246,.4),rgba(34,211,238,.3))">'+s.icon+'</span>'+
+        '<span style="flex:1;min-width:0"><span style="font-size:14px;font-weight:500">'+esc(s.name)+'</span>'+
+        '<span class="small muted" style="display:block">@'+s.handle+' · '+fmt(s.members)+' участников</span></span></button>';
+    }).join("");
+  }
+  return '<aside class="sidebar glass refract spec anim-rise">'+
+    '<div style="display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid rgba(255,255,255,.1)">'+
+      '<span style="display:grid;place-items:center;width:36px;height:36px;border-radius:12px;font-size:18px;background:linear-gradient(135deg,rgba(139,92,246,.6),rgba(34,211,238,.5));box-shadow:0 0 20px rgba(139,92,246,.35)">🧅</span>'+
+      '<span class="gradtext" style="font-size:17px;font-weight:700">Oniongram</span>'+
+      '<button class="glass small muted" style="margin-left:auto;border-radius:10px;padding:7px 11px" onclick="openSearch()" title="Глобальный поиск">🔍 ⌘K</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:4px;padding:8px;border-bottom:1px solid rgba(255,255,255,.1)">'+
+      rail.map(function(r){ return '<button onclick="go(\''+r[0]+'\')" class="'+(S.section===r[0]?"tab-active":"muted")+'" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:11px;border-radius:12px;font-size:13px;font-weight:500;transition:background .25s,color .25s">'+r[1]+' <span class="rail-label">'+r[2]+'</span></button>'; }).join("")+
+    '</div>'+
+    '<div class="scroll" style="flex:1;overflow-y:auto;padding:8px">'+list+'</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;padding:10px;border-top:1px solid rgba(255,255,255,.1)">'+
+      '<button style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;border-radius:12px;padding:4px;text-align:left" onclick="openProfile(\'me\')">'+avatar(me,36)+
+      '<span style="min-width:0"><span style="display:block;font-size:13px;font-weight:600">'+esc(me.displayName)+' ✨</span><span class="tiny muted">@'+me.username+' · 🕶️ невидимка</span></span></button>'+
+      '<button class="glass iconbtn" onclick="openSettings()" title="Настройки">⚙️</button>'+
+    '</div>'+
+  '</aside>';
+}
+
+function msgHtml(m,i,showAuthor,roleBadge){
+  const u=USERS[m.a];
+  let body="";
+  if(m.kind==="photo"){ body+='<div style="width:250px;max-width:100%;height:150px;border-radius:12px;margin-bottom:8px;background:linear-gradient(135deg,hsl('+m.hue+' 60% 35%),hsl('+(m.hue+70)+' 60% 25%))"></div>'; }
+  if(m.kind==="file"){ body+='<span style="display:flex;gap:12px;align-items:center;background:rgba(0,0,0,.25);border-radius:12px;padding:10px 12px;margin-bottom:4px"><span style="display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:rgba(34,211,238,.25)">📄</span><span><span style="display:block;font-size:13px;font-weight:500">'+esc(m.fileName)+'</span><span class="tiny" style="opacity:.7">'+m.fileSize+' · зашифрован</span></span></span>'; }
+  if(m.kind==="voice"){ let bars=""; for(let j=0;j<24;j++){ bars+='<i style="height:'+(7+((j*7)%15))+'px;animation-delay:'+(j*0.06)+'s"></i>'; } body+='<span style="display:flex;align-items:center;gap:10px;padding:4px 0"><span style="display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.15)">▶</span><span class="wave" style="display:flex;align-items:center;height:22px">'+bars+'</span><span class="tiny" style="opacity:.8">0:'+String(m.secs).padStart(2,"0")+'</span></span>'; }
+  if(m.text&&m.kind!=="file"){ body+='<span>'+esc(m.id.startsWith("x")?demoDecrypt(m.text):m.text)+'</span>'; }
+  let reacts="";
+  if(m.reactions){ reacts='<span style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap">'+Object.entries(m.reactions).map(function(e){ return '<span class="chip">'+e[0]+' '+e[1]+'</span>'; }).join("")+'</span>'; }
+  const meta='<span class="meta">'+(m.enc?'<span title="Зашифровано">🔒</span>':"")+m.time+(m.mine?" ✓✓":"")+'</span>';
+  if(showAuthor){
+    return '<div class="msg" style="display:flex;gap:12px;padding:6px;border-radius:12px;animation-delay:'+Math.min(i*35,300)+'ms">'+
+      '<button style="align-self:flex-start" onclick="openProfile(\''+m.a+'\')">'+avatar(u,36,false)+'</button>'+
+      '<div style="min-width:0"><div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;font-weight:600;color:'+(roleBadge?roleBadge.color:"#e2e8f0")+'">'+esc(u.displayName)+'</span>'+
+      (roleBadge?'<span class="tiny" style="border-radius:99px;padding:1px 7px;background:'+roleBadge.color+'22;color:'+roleBadge.color+'">'+roleBadge.name+'</span>':"")+
+      '<span class="tiny dim">'+m.time+'</span></div><div style="font-size:15px;line-height:1.5;margin-top:2px">'+body+'</div>'+reacts+'</div></div>';
+  }
+  return '<div class="msg" style="display:flex;align-items:flex-end;gap:10px;'+(m.mine?"flex-direction:row-reverse;":"")+'animation-delay:'+Math.min(i*35,300)+'ms">'+
+    (m.mine?"":avatar(u,30,false))+'<div class="bubble '+(m.mine?"me":"them")+'">'+body+meta+reacts+'</div></div>';
+}
+
+function viewMain(){
+  if(S.loading){ return '<div class="feed" style="border-radius:16px"><div class="skeleton" style="height:56px;margin-bottom:14px"></div><div class="skeleton" style="height:90px;width:55%;margin-bottom:12px"></div><div class="skeleton" style="height:60px;width:40%;margin-left:auto;margin-bottom:12px"></div><div class="skeleton" style="height:80px;width:50%"></div></div>'; }
+  if(S.section==="chats") return viewChat();
+  if(S.section==="channels") return viewChannel();
+  return viewServer();
+}
+
+function viewChat(){
+  const chat=CHATS.find(function(c){ return c.id===S.chatId; });
+  const peer=USERS[chat.userId];
+  const all=chat.messages.concat(S.extraMsgs[chat.id]||[]);
+  const sub=chat.typing?('<span style="color:#67e8f9">печатает '+typing()+'</span>')
+    : peer.hideLastSeen?"был(а) недавно 🕶️" : (peer.status==="online"?"в сети":"был(а) "+(peer.lastSeen||"давно"));
+  return '<header class="panel-h glass refract spec">'+
+    '<button style="display:flex;align-items:center;gap:12px;text-align:left" onclick="openProfile(\''+peer.id+'\')">'+avatar(peer,42)+
+    '<span><span style="display:block;font-size:14px;font-weight:600">'+esc(peer.displayName)+(peer.premium?" ✨":"")+'</span><span class="small muted">@'+peer.username+' · '+sub+'</span></span></button>'+
+    '<span class="tiny" style="display:inline-flex;gap:5px;align-items:center;background:rgba(52,211,153,.1);color:#6ee7b7;border-radius:99px;padding:5px 11px;margin-left:8px">🔐 E2E-шифрование</span>'+
+    '<span style="margin-left:auto;display:flex;gap:8px">'+
+      '<button class="glass iconbtn" onclick="startCall(\''+peer.id+'\',false)" title="Голосовой звонок">📞</button>'+
+      '<button class="glass iconbtn" onclick="startCall(\''+peer.id+'\',true)" title="Видеозвонок">🎥</button>'+
+    '</span></header>'+
+    '<div id="feed" class="feed scroll" style="display:flex;flex-direction:column;gap:12px">'+all.map(function(m,i){ return msgHtml(m,i,false); }).join("")+'</div>'+
+    '<footer class="composer glass refract spec" style="flex-direction:column;align-items:stretch;gap:0">'+
+      (S.limitNote?'<div class="small anim-fade" style="color:#fcd34d;padding:2px 12px 6px">⚠️ '+esc(S.limitNote)+'</div>':"")+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+      '<button class="iconbtn" title="Прикрепить файл">📎</button>'+
+      '<input id="draft" class="bare" placeholder="Сообщение для @'+peer.username+'… (шифруется локально)" onkeydown="if(event.key===\'Enter\')sendMsg()" />'+
+      '<button class="iconbtn" title="Голосовое сообщение">🎙️</button>'+
+      '<button class="grad-btn iconbtn" style="width:44px;height:44px" onclick="sendMsg()" title="Отправить">➤</button>'+
+    '</div></footer>';
+}
+
+function viewChannel(){
+  const ch=CHANNELS.find(function(c){ return c.id===S.channelId; });
+  return '<header class="panel-h glass refract spec">'+
+    '<span class="av" style="width:42px;height:42px;font-size:17px;background:linear-gradient(135deg,rgba(139,92,246,.5),rgba(34,211,238,.4))">📡</span>'+
+    '<span><span style="display:block;font-size:14px;font-weight:600">'+esc(ch.name)+(ch.verified?' <span style="color:#67e8f9" title="Верифицирован">✓</span>':"")+'</span>'+
+    '<span class="small muted">@'+ch.handle+' · '+fmt(ch.subs)+' подписчиков</span></span>'+
+    '<button class="'+(ch.subscribed?"glass":"grad-btn")+'" style="margin-left:auto;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:600" onclick="toggleSub()">'+(ch.subscribed?"✓ Вы подписаны":"Подписаться")+'</button></header>'+
+    '<div id="feed" class="feed scroll"><div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px">'+
+    ch.posts.map(function(p,i){
+      return '<article class="msg" style="background:rgba(26,26,43,.92);border-radius:16px;padding:20px;animation-delay:'+(i*70)+'ms">'+
+        '<p style="font-size:15px;line-height:1.6">'+esc(p.text)+'</p>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:16px;flex-wrap:wrap">'+
+        Object.entries(p.reactions).map(function(e){ return '<span class="chip" onclick="reactPost(\''+ch.id+'\',\''+p.id+'\',\''+e[0]+'\')" style="padding:6px 12px;font-size:13px">'+e[0]+' <span class="muted">'+e[1]+'</span></span>'; }).join("")+
+        '<span class="tiny dim" style="margin-left:auto;display:flex;gap:12px"><span title="Просмотры">👁 '+fmt(p.views)+'</span><span>'+p.time+'</span></span>'+
+      '</div></article>';
+    }).join("")+'</div></div>';
+}
+
+function viewServer(){
+  const sv=SERVERS.find(function(s){ return s.id===S.serverId; });
+  const cur=sv.channels.find(function(c){ return c.id===S.serverChannelId; })||sv.channels[0];
+  const msgs=(sv.messages[cur.id]||[]);
+  const texts=sv.channels.filter(function(c){ return c.type==="text"; }).map(function(c){
+    return '<button class="row'+(cur.id===c.id?" active":"")+'" style="padding:8px 10px;font-size:13px" onclick="openServerChannel(\''+c.id+'\')"><span class="dim">#</span> '+esc(c.name)+'</button>';
+  }).join("");
+  const voices=sv.channels.filter(function(c){ return c.type==="voice"; }).map(function(c){
+    let inner='<span style="display:flex;align-items:center;gap:8px">🔊 '+esc(c.name)+(c.voices.length?'<span class="tiny" style="margin-left:auto;background:rgba(52,211,153,.15);color:#6ee7b7;border-radius:99px;padding:2px 7px">'+c.voices.length+' в войсе</span>':"")+'</span>';
+    c.voices.forEach(function(uid){ inner+='<span style="display:flex;align-items:center;gap:8px;margin-top:6px;padding-left:22px" class="small muted">'+avatar(USERS[uid],18,false)+' '+esc(USERS[uid].displayName)+'</span>'; });
+    return '<div class="row" style="display:block;padding:8px 10px;font-size:13px;color:#94a3b8">'+inner+'</div>';
+  }).join("");
+  const roleGroups=sv.roles.map(function(role){
+    const members=Object.keys(sv.memberRoles).filter(function(uid){ return sv.memberRoles[uid]===role.id; });
+    if(!members.length) return "";
+    return '<div style="margin-bottom:14px"><p class="tiny" style="font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:0 8px 4px;color:'+role.color+'">'+role.name+' — '+members.length+'</p>'+
+      members.map(function(uid){ const u=USERS[uid]; return '<button class="row" style="padding:6px 8px" onclick="openProfile(\''+uid+'\')">'+avatar(u,28)+'<span style="min-width:0"><span style="display:block;font-size:13px">'+esc(u.displayName)+'</span>'+(u.customStatus?'<span class="tiny dim" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.customStatus)+'</span>':"")+'</span></button>'; }).join("")+
+      '<p class="tiny dim" style="padding:4px 8px 0;line-height:1.5">Права: '+role.perms.join(", ")+'</p></div>';
+  }).join("");
+  return '<div style="display:flex;gap:12px;height:100%;min-height:0">'+
+    '<aside class="glass refract spec" style="width:230px;flex-shrink:0;border-radius:16px;display:flex;flex-direction:column;overflow:hidden">'+
+      '<div style="padding:12px;border-bottom:1px solid rgba(255,255,255,.1)"><p style="font-size:14px;font-weight:600;display:flex;gap:8px;align-items:center"><span style="font-size:18px">'+sv.icon+'</span>'+esc(sv.name)+'</p><p class="tiny muted" style="margin-top:3px">@'+sv.handle+' · '+fmt(sv.members)+' участников</p></div>'+
+      '<div class="scroll" style="flex:1;overflow-y:auto;padding:8px"><p class="label">Текстовые</p>'+texts+'<p class="label">Голосовые</p>'+voices+'</div>'+
+    '</aside>'+
+    '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">'+
+      '<header class="panel-h glass refract spec"><span class="dim" style="font-size:17px">'+(cur.type==="text"?"#":"🔊")+'</span><span style="font-size:14px;font-weight:600">'+esc(cur.name)+'</span><span class="tiny dim" style="margin-left:auto">медленный режим: 5с · антиспам вкл.</span></header>'+
+      '<div id="feed" class="feed scroll" style="display:flex;flex-direction:column;gap:8px">'+msgs.map(function(m,i){
+        const role=sv.roles.find(function(r){ return r.id===sv.memberRoles[m.a]; });
+        return msgHtml(m,i,true,role);
+      }).join("")+'</div>'+
+      '<footer class="composer glass refract"><input class="bare" placeholder="Сообщение в #'+esc(cur.name)+'" /><button class="grad-btn iconbtn" style="width:44px;height:44px">➤</button></footer>'+
+    '</div>'+
+    '<aside class="members glass refract spec" style="width:225px;flex-shrink:0;border-radius:16px;display:flex;flex-direction:column;overflow:hidden">'+
+      '<p class="label" style="padding:14px 12px 8px;border-bottom:1px solid rgba(255,255,255,.1)">Участники и роли</p>'+
+      '<div class="scroll" style="flex:1;overflow-y:auto;padding:10px 8px">'+roleGroups+'</div>'+
+    '</aside>'+
+  '</div>';
+}
+
+/* ---------- ОВЕРЛЕИ ---------- */
+function viewOverlay(){
+  if(!S.overlay) return "";
+  if(S.overlay==="call") return viewCall();
+  if(S.overlay==="settings") return viewSettings();
+  if(S.overlay==="search") return viewSearch();
+  if(S.overlay==="profile") return viewProfile();
+  return "";
+}
+function viewCall(){
+  const u=USERS[S.callUser];
+  const mm=String(Math.floor(S.callSecs/60)).padStart(2,"0"), ss=String(S.callSecs%60).padStart(2,"0");
+  return '<div class="overlay anim-fade">'+
+  '<div class="glass-strong refract spec anim-pop" style="position:relative;width:100%;max-width:480px;border-radius:26px;padding:36px;text-align:center;overflow:hidden">'+
+    (S.callVideo&&!S.camOff?'<div style="position:absolute;inset:0;z-index:-1;opacity:.55;background:radial-gradient(560px 380px at 50% 28%,hsl('+u.hue+' 60% 30% / .85),transparent 70%)"></div>':"")+
+    '<div style="display:inline-block;animation:pulse 2s ease-out infinite;border-radius:50%">'+avatar(u,96,false)+'</div>'+
+    '<h2 style="margin-top:14px;font-size:20px;font-weight:600;color:#fff">'+esc(u.displayName)+'</h2>'+
+    '<p class="small" style="color:#a78bfa">@'+u.username+'</p>'+
+    '<p class="small" style="margin-top:12px;color:#67e8f9;display:flex;align-items:center;justify-content:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:#34d399;animation:pulse 2s infinite"></span>'+(S.callVideo?"Видеозвонок":"Голосовой звонок")+' · '+mm+':'+ss+'</p>'+
+    '<p class="tiny dim" style="margin-top:6px">🔐 сквозное шифрование · P2P (демо)</p>'+
+    '<div style="display:flex;justify-content:center;gap:12px;margin-top:28px">'+
+      '<button class="glass iconbtn" style="width:56px;height:56px;font-size:20px;'+(S.muted?"background:rgba(239,68,68,.25)":"")+'" onclick="S.muted=!S.muted;render()" title="Микрофон">'+(S.muted?"🔇":"🎙️")+'</button>'+
+      '<button class="glass iconbtn" style="width:56px;height:56px;font-size:20px;'+(S.camOff?"opacity:.55":"")+'" onclick="S.camOff=!S.camOff;render()" title="Камера">🎥</button>'+
+      '<button class="iconbtn" style="width:82px;height:56px;font-size:20px;border-radius:16px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;box-shadow:0 0 24px rgba(239,68,68,.4)" onclick="endCall()" title="Завершить">📞</button>'+
+    '</div></div></div>';
+}
+function viewSettings(){
+  const T=[["privacy","🔒","Приватность"],["notifications","🔔","Уведомления"],["appearance","🎨","Оформление"],["devices","📱","Устройства"],["data","📦","Данные"],["premium","✨","Premium"]];
+  const p=S.prefs;
+  function sw(key){ return '<span class="switch'+(p[key]?" on":"")+'" onclick="togglePref(\''+key+'\')"></span>'; }
+  let body="";
+  if(S.settingsTab==="privacy"){
+    body='<div class="srow"><span><span style="display:block;font-size:14px">Скрыть «последний визит»</span><span class="tiny dim">Никто не увидит, когда вы были в сети</span></span>'+sw("hideLastSeen")+'</div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">Скрыть статус онлайн</span><span class="tiny dim">Вы всегда «невидимка» 🕶️</span></span>'+sw("hideOnline")+'</div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">Двухфакторная защита</span><span class="tiny dim">TOTP-код при входе</span></span>'+sw("twoFa")+'</div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">E2E-шифрование личных чатов</span><span class="tiny dim">Отключить нельзя</span></span><span class="tiny" style="background:rgba(52,211,153,.15);color:#6ee7b7;border-radius:99px;padding:4px 10px">всегда вкл.</span></div>'+
+    '<p class="label" style="padding-top:14px">Заблокированные — '+S.blocked.length+'</p>'+
+    (S.blocked.length?S.blocked.map(function(b){ return '<div class="srow"><span style="font-size:14px">@'+esc(b)+'</span><button class="small" style="background:rgba(255,255,255,.08);border-radius:9px;padding:6px 12px" onclick="unblock(\''+b+'\')">Разблокировать</button></div>'; }).join(""):'<p class="small dim" style="padding:8px 12px">Список пуст 🎉</p>');
+  } else if(S.settingsTab==="notifications"){
+    body='<div class="srow"><span><span style="display:block;font-size:14px">Личные чаты</span><span class="tiny dim">Звук и баннеры</span></span>'+sw("nChats")+'</div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">Каналы</span><span class="tiny dim">Новые посты</span></span>'+sw("nChannels")+'</div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">Звук</span><span class="tiny dim">Тихий неоновый «блип»</span></span>'+sw("nSound")+'</div>';
+  } else if(S.settingsTab==="appearance"){
+    const opts=[["violet","#8b5cf6","Фиолетовый"],["cyan","#22d3ee","Бирюзовый"],["magenta","#d946ef","Маджента"]];
+    body='<p class="small muted" style="padding:0 12px 10px">Тёмная тема включена по умолчанию. Неоновый акцент стекла:</p><div style="display:flex;gap:12px;padding:0 12px">'+
+    opts.map(function(o){ return '<button class="glass" style="flex:1;border-radius:16px;padding:16px;text-align:center;font-size:13px;'+(S.prefs.accent===o[0]?"outline:2px solid rgba(255,255,255,.4)":"")+'" onclick="setAccent(\''+o[0]+'\')"><span style="display:block;width:32px;height:32px;border-radius:50%;margin:0 auto 8px;background:'+o[1]+';box-shadow:0 0 16px '+o[1]+'66"></span>'+o[2]+'</button>'; }).join("")+'</div>'+
+    '<p class="tiny dim" style="padding:14px 12px 0">✨ Кастомные темы — premium-функция, бесплатная для всех.</p>';
+  } else if(S.settingsTab==="devices"){
+    body=DEVICES.map(function(d){ return '<div class="srow"><span><span style="display:block;font-size:14px">'+(d.cur?"🟢 ":"")+d.name+'</span><span class="tiny dim">'+d.loc+' · '+d.when+'</span></span>'+
+      (d.cur?'<span class="tiny" style="background:rgba(52,211,153,.15);color:#6ee7b7;border-radius:99px;padding:4px 10px">текущее</span>':'<button class="tiny" style="background:rgba(239,68,68,.15);color:#fca5a5;border-radius:9px;padding:6px 12px">Завершить</button>')+'</div>'; }).join("")+
+      '<p class="tiny dim" style="padding:10px 12px 0">IP-адреса не сохраняются — только тип устройства.</p>';
+  } else if(S.settingsTab==="data"){
+    body='<div class="srow"><span><span style="display:block;font-size:14px">Экспорт данных</span><span class="tiny dim">Переписка и настройки одним JSON</span></span>'+
+      '<button class="grad-btn tiny" style="padding:9px 16px;font-weight:600" onclick="doExport()">'+(S.exported?"✓ Готово (демо)":"Экспортировать")+'</button></div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">Автоудаление сообщений</span><span class="tiny dim">Самоуничтожение через 24 часа</span></span><span class="switch"></span></div>'+
+    '<div class="srow"><span><span style="display:block;font-size:14px">Удалить аккаунт</span><span class="tiny dim">Безвозвратно — мы ничего не храним</span></span><button class="tiny" style="background:rgba(239,68,68,.15);color:#fca5a5;border-radius:9px;padding:6px 12px">Удалить</button></div>';
+  } else {
+    body='<div class="glass refract" style="border-radius:16px;padding:16px;text-align:center;margin-bottom:12px">'+
+      '<p style="font-size:14px;font-weight:600;color:#fff">✨ Oniongram Premium — бесплатно для всех</p>'+
+      '<p class="tiny muted" style="margin-top:4px">Никакой монетизации: все функции уже включены у каждого аккаунта.</p></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      PERKS.map(function(pk){ return '<div class="glass" style="border-radius:16px;padding:16px"><span style="font-size:24px">'+pk.icon+'</span><p style="font-size:13px;font-weight:500;margin-top:8px">'+pk.t+'</p><p class="tiny muted">'+pk.d+'</p><p class="tiny" style="margin-top:8px;color:#6ee7b7;font-weight:500">✓ активно</p></div>'; }).join("")+'</div>';
+  }
+  return '<div class="overlay anim-fade" onclick="closeOverlay()">'+
+  '<div class="glass-strong refract spec anim-pop" style="width:100%;max-width:860px;max-height:85vh;border-radius:24px;display:flex;overflow:hidden" onclick="event.stopPropagation()">'+
+    '<nav style="width:220px;flex-shrink:0;border-right:1px solid rgba(255,255,255,.1);padding:14px">'+
+      '<div style="display:flex;align-items:center;gap:10px;padding:4px 8px 16px">'+avatar(USERS.me,40)+'<span><span style="display:block;font-size:13px;font-weight:600">'+esc(USERS.me.displayName)+' ✨</span><span class="tiny muted">@'+USERS.me.username+'</span></span></div>'+
+      T.map(function(t){ return '<button onclick="setSettingsTab(\''+t[0]+'\')" class="'+(S.settingsTab===t[0]?"tab-active":"muted")+'" style="display:flex;gap:10px;align-items:center;width:100%;padding:11px 12px;border-radius:12px;font-size:13px;transition:background .25s">'+t[1]+' '+t[2]+'</button>'; }).join("")+
+    '</nav>'+
+    '<div class="scroll" style="flex:1;min-width:0;overflow-y:auto;padding:20px;min-height:520px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="font-size:17px;font-weight:600;color:#fff">'+T.find(function(t){ return t[0]===S.settingsTab; })[2]+'</h2>'+
+      '<button class="glass iconbtn" style="width:36px;height:36px;font-size:14px" onclick="closeOverlay()">✕</button></div>'+
+      '<div class="anim-rise">'+body+'</div>'+
+    '</div></div></div>';
+}
+function viewSearch(){
+  const q=S.searchQ.trim().toLowerCase().replace(/^@/,"");
+  let body="";
+  if(!q){ body='<p class="small dim" style="text-align:center;padding:26px 12px">Начните вводить — ищем по всему Oniongram.<br><span class="tiny">Подсказка: попробуйте @cipher или «ключ»</span></p>'; }
+  else{
+    const us=Object.values(USERS).filter(function(u){ return u.id!=="me"&&(u.username.indexOf(q)>=0||u.displayName.toLowerCase().indexOf(q)>=0); });
+    const cs=CHANNELS.filter(function(c){ return c.handle.indexOf(q)>=0||c.name.toLowerCase().indexOf(q)>=0; });
+    const svs=SERVERS.filter(function(s){ return s.handle.indexOf(q)>=0||s.name.toLowerCase().indexOf(q)>=0; });
+    const ms=[];
+    CHATS.forEach(function(c){ c.messages.forEach(function(m){ if(m.text&&m.text.toLowerCase().indexOf(q)>=0){ ms.push({ c:c, m:m }); } }); });
+    if(us.length){ body+='<p class="label">Пользователи</p>'+us.map(function(u){
+      const chat=CHATS.find(function(c){ return c.userId===u.id; });
+      return '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:12px" class="srow">'+avatar(u,34)+
+        '<button style="flex:1;min-width:0;text-align:left" onclick="'+(chat?('openChat(\''+chat.id+'\')'):'')+'"><span style="display:block;font-size:14px">'+esc(u.displayName)+(u.premium?" ✨":"")+'</span><span class="tiny muted">@'+u.username+'</span></button>'+
+        '<button class="glass iconbtn" style="width:36px;height:36px;font-size:14px" onclick="startCall(\''+u.id+'\',false)" title="Позвонить @'+u.username+'">📞</button></div>';
+    }).join(""); }
+    if(cs.length){ body+='<p class="label">Каналы</p>'+cs.map(function(c){
+      return '<button class="row" onclick="openChannelFromSearch(\''+c.id+'\')"><span class="av" style="width:34px;height:34px;font-size:14px;background:rgba(139,92,246,.25)">📡</span><span style="flex:1;min-width:0;text-align:left"><span style="display:block;font-size:14px">'+esc(c.name)+'</span><span class="tiny muted">@'+c.handle+' · '+fmt(c.subs)+'</span></span></button>';
+    }).join(""); }
+    if(svs.length){ body+='<p class="label">Сервера</p>'+svs.map(function(s){
+      return '<button class="row" onclick="openServerFromSearch(\''+s.id+'\')"><span class="av" style="width:34px;height:34px;border-radius:11px;font-size:15px;background:rgba(34,211,238,.2)">'+s.icon+'</span><span style="flex:1;min-width:0;text-align:left"><span style="display:block;font-size:14px">'+esc(s.name)+'</span><span class="tiny muted">@'+s.handle+' · '+fmt(s.members)+' участников</span></span></button>';
+    }).join(""); }
+    if(ms.length){ body+='<p class="label">Сообщения</p>'+ms.slice(0,5).map(function(x){
+      const u=USERS[x.c.userId];
+      return '<button class="row" onclick="openChat(\''+x.c.id+'\')">'+avatar(u,34,false)+'<span style="flex:1;min-width:0;text-align:left"><span style="display:block;font-size:14px">'+esc(u.displayName)+'</span><span class="tiny muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.m.text)+'</span></span><span class="tiny dim">'+x.m.time+'</span></button>';
+    }).join(""); }
+    if(!us.length&&!cs.length&&!svs.length&&!ms.length){ body='<p class="small dim" style="text-align:center;padding:26px 12px">Ничего не найдено по «'+esc(S.searchQ)+'» 🧅</p>'; }
+  }
+  return '<div class="overlay anim-fade" style="align-items:start;padding-top:10vh" onclick="closeOverlay()">'+
+  '<div class="glass-strong refract spec anim-drop" style="width:100%;max-width:560px;border-radius:18px;overflow:hidden" onclick="event.stopPropagation()">'+
+    '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.1)">'+
+      '<span>🔍</span><input id="searchbox" class="bare" placeholder="Поиск: @username, каналы, сервера, сообщения…" value="'+esc(S.searchQ)+'" oninput="searchInput(this.value)" />'+
+      '<span class="tiny dim" style="background:rgba(255,255,255,.08);border-radius:6px;padding:4px 8px">Esc</span></div>'+
+    '<div class="scroll" style="max-height:55vh;overflow-y:auto;padding:8px">'+body+'</div></div></div>';
+}
+function viewProfile(){
+  const u=USERS[S.profileId];
+  const isMe=u.id==="me";
+  const statusTxt=u.status==="hidden"?'<span style="color:#cbd5e1">🕶️ невидимка</span>':u.status==="online"?'<span style="color:#6ee7b7">в сети</span>':'<span style="color:#cbd5e1">'+u.status+'</span>';
+  return '<div class="overlay anim-fade" onclick="closeOverlay()">'+
+  '<div class="glass-strong refract spec anim-pop" style="width:100%;max-width:380px;border-radius:26px;overflow:hidden" onclick="event.stopPropagation()">'+
+    '<div style="height:92px;background:linear-gradient(120deg,hsl('+u.hue+' 65% 45% / .55),hsl('+(u.hue+80)+' 65% 40% / .45))"></div>'+
+    '<div style="padding:0 24px 24px;margin-top:-38px">'+
+      '<div style="display:inline-block;border:4px solid rgba(11,11,22,.7);border-radius:50%">'+avatar(u,72)+'</div>'+
+      '<h3 style="font-size:18px;font-weight:600;color:#fff;margin-top:8px">'+esc(u.displayName)+(u.premium?' <span title="Premium (бесплатно)">✨</span>':"")+'</h3>'+
+      '<p class="small" style="color:#a78bfa">@'+u.username+'</p>'+
+      (u.customStatus?'<p class="glass small" style="display:inline-block;border-radius:12px;padding:6px 12px;margin-top:12px">'+esc(u.customStatus)+'</p>':"")+
+      '<div class="tiny muted" style="margin-top:14px;display:flex;flex-direction:column;gap:6px">'+
+        '<span>Статус: '+statusTxt+'</span>'+
+        '<span>Последний визит: '+(u.hideLastSeen?"скрыт настройками приватности 🔒":(u.lastSeen||"—"))+'</span>'+
+        '<span>🔐 Личные чаты зашифрованы сквозным шифрованием</span></div>'+
+      (isMe?'<p class="tiny muted" style="margin-top:18px;background:rgba(255,255,255,.05);border-radius:12px;padding:10px 12px;line-height:1.6">Это ваш публичный профиль: только @username, аватар-градиент и статус. Никаких персональных данных.</p>'
+      :'<div style="display:flex;gap:10px;margin-top:18px">'+
+        '<button class="grad-btn" style="flex:1;padding:11px;font-size:13px" onclick="startCall(\''+u.id+'\',false)">📞 Позвонить</button>'+
+        '<button class="glass" style="flex:1;padding:11px;border-radius:12px;font-size:13px;font-weight:600" onclick="startCall(\''+u.id+'\',true)">🎥 Видео</button></div>')+
+    '</div></div></div>';
+}
+
+/* ============ ДЕЙСТВИЯ ============ */
+window.go=function(s){ if(S.section===s&&!S.loading)return; S.section=s; S.loading=true; render(); setTimeout(function(){ S.loading=false; render(); },550); };
+window.openChat=function(id){ S.chatId=id; S.section="chats"; S.overlay=null; const c=CHATS.find(function(x){ return x.id===id; }); if(c)c.unread=0; render(); };
+window.openChannel=function(id){ S.channelId=id; S.section="channels"; render(); };
+window.openChannelFromSearch=function(id){ S.overlay=null; openChannel(id); };
+window.openServer=function(id){ S.serverId=id; S.section="servers"; const sv=SERVERS.find(function(x){ return x.id===id; }); S.serverChannelId=sv.channels[0].id; render(); };
+window.openServerFromSearch=function(id){ S.overlay=null; openServer(id); };
+window.openServerChannel=function(id){ S.serverChannelId=id; render(); };
+window.openSettings=function(){ S.overlay="settings"; render(); };
+window.setSettingsTab=function(t){ S.settingsTab=t; render(); };
+window.togglePref=function(k){ S.prefs[k]=!S.prefs[k]; render(); };
+window.unblock=function(b){ S.blocked=S.blocked.filter(function(x){ return x!==b; }); render(); };
+window.setAccent=function(a){ S.prefs.accent=a;
+  const map={ violet:["139 92 246","34 211 238"], cyan:["34 211 238","139 92 246"], magenta:["217 70 239","139 92 246"] };
+  document.documentElement.style.setProperty("--a1",map[a][0]);
+  document.documentElement.style.setProperty("--a2",map[a][1]); render(); };
+window.doExport=function(){ S.exported=true; render(); setTimeout(function(){ S.exported=false; if(S.overlay==="settings")render(); },2500); };
+window.openSearch=function(){ S.overlay="search"; S.searchQ=""; render(); };
+window.searchInput=function(v){ S.searchQ=v; render(); };
+window.closeOverlay=function(){ if(S.overlay==="call")return endCall(); S.overlay=null; S.profileId=null; render(); };
+window.startCall=function(uid,video){ S.overlay="call"; S.callUser=uid; S.callVideo=!!video; S.callSecs=0; S.muted=false; S.camOff=!video;
+  if(callTimer)clearInterval(callTimer);
+  callTimer=setInterval(function(){ S.callSecs++; const el=document.getElementById("calltimer");
+    if(el){ el.textContent=String(Math.floor(S.callSecs/60)).padStart(2,"0")+":"+String(S.callSecs%60).padStart(2,"0"); } },1000);
+  render(); };
+window.endCall=function(){ if(callTimer){ clearInterval(callTimer); callTimer=null; } S.overlay=null; S.callUser=null; render(); };
+window.openProfile=function(uid){ S.overlay="profile"; S.profileId=uid; render(); };
+window.sendMsg=function(){
+  const inp=document.getElementById("draft"); if(!inp)return;
+  const text=inp.value.trim(); if(!text)return;
+  const gate=rl.take();
+  if(!gate.ok){ S.limitNote="Слишком быстро — антиспам. Подождите "+gate.wait+" с."; render();
+    setTimeout(function(){ S.limitNote=""; render(); },2500); return; }
+  if(!S.extraMsgs[S.chatId])S.extraMsgs[S.chatId]=[];
+  const now=new Date();
+  S.extraMsgs[S.chatId].push({ id:"x"+Date.now(), a:"me", kind:"text", text:demoEncrypt(text),
+    time:String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"), enc:true, mine:true });
+  render();
+  const ni=document.getElementById("draft"); if(ni)ni.focus();
+};
+window.toggleSub=function(){ const ch=CHANNELS.find(function(c){ return c.id===S.channelId; }); ch.subscribed=!ch.subscribed; render(); };
+window.reactPost=function(chId,pId,emoji){ const ch=CHANNELS.find(function(c){ return c.id===chId; });
+  const p=ch.posts.find(function(x){ return x.id===pId; }); p.reactions[emoji]=(p.reactions[emoji]||0)+1; render(); };
+
+/* Горячие клавиши */
+document.addEventListener("keydown",function(e){
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); if(S.authed){ openSearch(); } }
+  else if(e.key==="Escape"&&S.overlay){ closeOverlay(); }
+});
+/* Specular highlight за курсором (rAF-троттлинг → 60 FPS) */
+let rafId=0;
+document.addEventListener("pointermove",function(e){
+  if(rafId)return;
+  const x=(e.clientX/innerWidth*100).toFixed(1)+"%", y=(e.clientY/innerHeight*100).toFixed(1)+"%";
+  rafId=requestAnimationFrame(function(){ rafId=0;
+    document.documentElement.style.setProperty("--spec-x",x);
+    document.documentElement.style.setProperty("--spec-y",y); });
+});
+
+render();
+</script>
+</body>
+</html>
